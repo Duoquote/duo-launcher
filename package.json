@@ -1,0 +1,37 @@
+{
+  "name": "mclaunch",
+  "version": "1.0.0",
+  "description": "Minecraft launcher made with electron.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "cross-env NODE_ENV=development npm start",
+    "webpack": "cross-env NODE_ENV=development npx webpack && npm run pug",
+    "pug": "node pug.render.js"
+  },
+  "keywords": [
+    "minecraft",
+    "launcher",
+    "javascript",
+    "nodejs"
+  ],
+  "author": "Duoquote",
+  "license": "MIT",
+  "devDependencies": {
+    "@material-ui/core": "^4.11.0",
+    "clean-webpack-plugin": "^3.0.0",
+    "css-loader": "^3.6.0",
+    "electron": "^9.0.5",
+    "electron-reload": "^1.5.0",
+    "glob": "^7.1.6",
+    "pug": "^3.0.0",
+    "sass": "^1.26.9",
+    "sass-loader": "^8.0.2",
+    "style-loader": "^1.2.1",
+    "webpack": "^4.43.0",
+    "webpack-cli": "^3.3.12"
+  },
+  "dependencies": {
+    "cross-env": "^7.0.2"
+  }
+}
