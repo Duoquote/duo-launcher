@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 
 // Render all pug files except `templates`.
-glob("!(templates)/**/*.pug", { root: path.resolve(__dirname, "src") }, (err, files)=>{
+glob("!(templates|node_modules)/**/*.pug", { root: path.resolve(__dirname, "src") }, (err, files)=>{
 
   console.log("Input files:", files);
 
