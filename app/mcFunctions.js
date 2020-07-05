@@ -3,7 +3,10 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const _ = require('lodash');
-
+const crypto = require('crypto');
+const yauzl = require('yauzl');
+const PassThrough = require('stream').PassThrough;
+var logger = require('log4js').getLogger();
 
 const base = "data"
 
@@ -21,8 +24,8 @@ class DownloadsHandler {
 
   #jobs = {};
 
-  constructor() {
-
+  constructor(threads) {
+    this.threads = threads;
   }
 
   /**
@@ -35,6 +38,7 @@ class DownloadsHandler {
       var job = _.findLast(this.#jobs[jobID].files);
       this.#jobs[jobID].remaining -= 1;
       delete this.#jobs[jobID].files[job.id]
+      logger.debug(`Sent job, ${jobID}`)
       // this.#jobs[jobID]
       return job;
     }
@@ -51,6 +55,7 @@ class DownloadsHandler {
    */
   put(jobID, files, cb) {
     return new Promise((resolve, reject)=>{
+      logger.debug(`Received job, ${jobID}`)
       // Check if the job name is already used.
       if (!(jobID in this.#jobs)) {
         // This part creates the base structure of a `job`. We pass the
@@ -73,7 +78,7 @@ class DownloadsHandler {
         //   finished: { total: 0 },
         //   failed: {}
         // }
-
+        //
         this.#jobs[jobID] = {
           total: files.length,
           files: files.reduce((acc, cur, ind)=>{
@@ -90,10 +95,12 @@ class DownloadsHandler {
           failed: {}
         };
 
+
         // If the file amount that we are going to download amount is less than
         // the amount of our downloading threads, do not create unnecessary
         // downloading threads.
-        var fileAmount = (files.length < 4) ? files.length : 4;
+        logger.debug(`Started downloading '${jobID}' with ${this.threads} threads.`)
+        var fileAmount = (files.length < 8) ? files.length : 8;
         for (var i = 0; i < fileAmount; i++) {
           this.downloadFile(jobID, cb);
         }
@@ -115,10 +122,12 @@ class DownloadsHandler {
 
       // Get the job.
       var job = this.getJob(jobID);
+
       fetch(job.url).then((resp)=>{
 
         fs.stat(path.parse(job.path).dir, (err, stat)=>{
           if (err) {
+            console.log(err);
 
             job.reason = err.message;
 
@@ -174,10 +183,19 @@ class DownloadsHandler {
 
 }
 
-
+/**
+ * This class has basically became a library for minecraft game files but I can
+ * not say that for now as it is not well constructed to become a library.
+ */
 class Minecraft {
 
-  constructor() {}
+  downloader;
+  /**
+   * Initializes `DownloadsHandler` for fast downloading.
+   */
+  constructor() {
+    this.downloader = new DownloadsHandler();
+  }
 
   /**
    * Get manifest JSON data.
@@ -185,7 +203,7 @@ class Minecraft {
    */
   static getManifest() {
 
-    const manifestPath = path.resolve(__dirname, `${base}/version_manifest.json`);
+    const manifestPath = `${base}/version_manifest.json`;
     const endpoint = "https://launchermeta.mojang.com/mc/game/version_manifest.json";
 
     return new Promise(async (resolve, reject)=>{
@@ -224,12 +242,12 @@ class Minecraft {
    * Gets version information of specified version. Has data about files to
    * download or check.
    * @param  {string} version  Game version.
-   * @param  {Object} manifest Manifest JSON.
+   * @param  {Object} manifest Manifest JSON data that comes from `getManifest` function.
    * @return {Promise}         Returns a promise object.
    */
   static getVersionInfo(version, manifest) {
 
-    const versionPath = path.resolve(__dirname, `${base}/versions/${version}/${version}.json`);
+    const versionPath = `${base}/versions/${version}/${version}.json`;
 
     return new Promise((resolve, reject)=>{
       fs.stat(versionPath, (err, stats)=>{
@@ -267,9 +285,14 @@ class Minecraft {
     })
   }
 
+  /**
+   * Get asset information with `versionInfo`.
+   * @param  {Object} versionInfo Version JSON data that comes from `getVersionInfo` function.
+   * @return {Promise}             A promise object.
+   */
   static getAssetsInfo(versionInfo) {
 
-    const assetFile = path.resolve(__dirname, `${base}/assets/${versionInfo.assets}.json`);
+    const assetFile = `${base}/assets/${versionInfo.assets}.json`;
 
     return new Promise((resolve, reject)=>{
 
@@ -312,6 +335,12 @@ class Minecraft {
    * @return {Promise}        Returns a promise object.
    */
   checkFiles(version, cb) {
+
+    const gameFile = `${base}/versions/${version}/fileData.json`;
+    var fileList;
+    var extracting = [];
+    var checkAgain = false;
+
     return new Promise(async (resolve, reject)=>{
 
       // Get version info.
@@ -325,15 +354,240 @@ class Minecraft {
         reject(err);
       });
 
-      this.getOfficialList(versionInfo, assetInfo, version).then((data)=>{
-        console.log(data);
-      });
+      await new Promise((res, rej)=>{
+        fs.stat(gameFile, async (err)=>{
+          if (err) {
+            if (err.code == "ENOENT") {
+              // Subject to change as I may implement forge or things like that.
+              fileList = await this.getOfficialList(versionInfo, assetInfo, version);
+              fs.writeFile(gameFile, JSON.stringify(fileList), (err)=>{
+                if (err) { rej(err) } else {
+                  res();
+                }
+              })
+
+            }
+          } else {
+            fs.readFile(gameFile, (err, data)=>{
+              if (err) { rej(err) } else {
+                fileList = JSON.parse(data);
+                res();
+              }
+            })
+          }
+        })
+      }).catch((err)=>{
+        reject(err)
+      })
+
+
+      var downList = [];
+
+
+      for (var file in fileList) {
+        if (fileList[file].download) {
+          await new Promise((res, rej)=>{
+            fs.stat(file, async (err)=>{
+              if (err) {
+                if (err.code == "ENOENT") {
+
+                  downList.push({
+                    url: fileList[file].url,
+                    // Might change `path` function to something else later.
+                    path: fileList[file].path
+                  })
+
+                  fs.mkdir(path.parse(fileList[file].path).dir,
+                    { recursive: true },
+                    (err)=>{
+                      if (err) {
+                        rej(err)
+                      } else {
+                        res();
+                      }
+                  })
+                }
+              } else {
+                // Hash check here...
+                Minecraft.sha1Sum(file).then((sum)=>{
+                  if (sum == fileList[file].hash) {
+
+                    res();
+                  } else {
+                    rej(new Error(`The resulting hash of file '${file}' is wrong.`))
+                  }
+                }).catch((err)=>{
+                  if (err) { rej(err) };
+                });
+              }
+            })
+          })
+
+        }
+
+        if (fileList[file].download && fileList[file].extract) {
+          if (!fileList[file].extracted) {
+            checkAgain = true;
+            // If the file is going to be downloaded, do not try to extract.
+            if (!_.find(downList, { path: file })) {
+              extracting.push(Minecraft.extractJar(fileList[file]))
+            }
+
+          } else {
+            //console.log(fileList[file]);
+            var cursor = fileList[file];
+            fileList[file].extracted.forEach((f)=>{
+              fs.stat(f.file, (err)=>{
+                if (err) {
+                  checkAgain = true;
+                  if (!_.find(downList, { path: cursor.path })) {
+                    extracting.push(Minecraft.extractJar(cursor))
+                  }
+                }
+              })
+            })
+            // check sha1 of `file.extracted[*]`
+          }
+        }
+      }
+
+      console.log("First check pass.");
+
+      if (checkAgain) {
+        console.log("There are files to extract");
+      } else {
+        console.log("No files to extract.");
+      }
+
+
+      // Wait for files to get extracted.
+      await Promise.all(extracting).then((extracted)=>{
+        console.log(extracted);
+        fs.writeFile(gameFile, JSON.stringify(fileList), (err)=>{
+          console.log("Saved fileData.json");
+          if (err) {
+            reject(err);
+          }
+        })
+      }).catch((err)=>{
+        reject(err);
+      })
+
+
+      // If there is stuff to download, download and wait for them to finish.
+      if (downList.length) {
+        await this.downloader.put(version, downList, (a, b)=>{
+          // This callback will go to the client to visualize the progress.
+          console.log(`[${a}/${b}]`);
+        });
+      }
+
+      // // Will look into that later
+      // if (checkAgain) {
+      //   this.checkFiles(version, cb)
+      // }
 
     })
   }
 
 
+  /**
+   * Extracts a JAR file, not specifically a jar file, it will extract any zip
+   * file.
+   * @param  {Object} file A file object, should contain `path` key that
+   * contains the path to zip file, `extractPath` key that contains the path to
+   * folder to extract, `exclude` key to exclude a specific file (might change
+   * it to an array later) and `extracted` key to store extracted files info.
+   * @return {Promise}      Returns a promise object.
+   */
+  static extractJar(file) {
+    //console.log(file);
 
+    var extractedList = [];
+
+    return new Promise((resolve, reject)=>{
+      console.log("YAUZL:");
+      console.log(file);
+      yauzl.open(file.path, { lazyEntries: true }, (err, zip)=>{
+        if (err) { reject(err) } else {
+          zip.readEntry();
+          zip.on("end", async ()=>{
+            file.extracted = extractedList;
+            console.log(extractedList);
+            resolve(file);
+          })
+          zip.on("entry", (entry)=>{
+            if (entry.fileName.startsWith(file.exclude)) {
+              zip.readEntry();
+            } else {
+              zip.openReadStream(entry, (err, stream)=>{
+                if (err) { reject(err) } else {
+                  let exFile = path.join(file.extractPath, entry.fileName);
+                  fs.stat(path.parse(exFile).dir, (err)=>{
+                    if (err) {
+                      if (err.code == "ENOENT") {
+                        fs.mkdir(path.parse(exFile).dir, (err)=>{
+                          if (err) { reject(err) } else {
+                            let fsStream = fs.createWriteStream(exFile);
+                            stream.on("end", async ()=>{
+                              let exHash = await Minecraft.sha1Sum(exFile);
+                              extractedList.push({ file: exFile, hash: exHash });
+                              zip.readEntry();
+                            })
+                            stream.pipe(fsStream);
+                          }
+                        })
+                      }
+                    } else {
+                      let fsStream = fs.createWriteStream(exFile);
+                      stream.on("end", async ()=>{
+                        let exHash = await Minecraft.sha1Sum(exFile);
+                        extractedList.push({ file: exFile, hash: exHash });
+                        zip.readEntry();
+                      })
+                      stream.pipe(fsStream);
+                    }
+                  })
+                }
+              })
+            }
+          })
+        }
+      })
+    })
+  }
+
+  /**
+   * Get sha1 sum of a file as hex string.
+   * @param  {String} file The path to the file to calculate the hash of.
+   * @return {Promise}      Returns a promise object.
+   */
+  static sha1Sum(file) {
+    return new Promise((resolve, reject)=>{
+      const shasum = crypto.createHash("sha1");
+      const fsStream = fs.createReadStream(file);
+      fsStream.on("readable", ()=>{
+        const data = fsStream.read();
+        if (data) {
+          shasum.update(data)
+        } else {
+          resolve(shasum.digest("hex"))
+        }
+      })
+    })
+  }
+
+
+  /**
+   * Gets and prepares official game file list of minecraft, it is a function on
+   * it's on because I may implement other things like forge so these will have
+   * their own functions too.
+   * @param  {Object} versionInfo Version info data from `getVersionInfo` function.
+   * @param  {Object} assetInfo   Asset info data from `getAssetsInfo` function.
+   * @param  {String} version     The game version to prepare list of files.
+   * @return {Promise}             Returns a promise object that gets fullfilled
+   * when everything is prepared.
+   */
   getOfficialList(versionInfo, assetInfo, version) {
 
     // Checklist:
@@ -345,7 +599,7 @@ class Minecraft {
     // [-] Fix rule parsing as it's temporary.
     return new Promise((resolve, reject)=>{
 
-      var fileList = [];
+      var fileList = {};
 
       // Get os info.
       const arch = process.arch.replace("x", "");
@@ -363,7 +617,7 @@ class Minecraft {
       }
 
       // Add client.jar rightaway, mark as download.
-      fileList.push({
+      fileList[`${base}/${version}/client.jar`] = {
         path: `${base}/${version}/client.jar`,
         url: versionInfo.downloads.client.url,
         hash: versionInfo.downloads.client.sha1,
@@ -371,11 +625,11 @@ class Minecraft {
         extract: false,
         exclude: false,
         type: "client"
-      })
+      }
 
 
       // Add server.jar rightaway, mark as not to download.
-      fileList.push({
+      fileList[`${base}/${version}/server/server.jar`] = {
         path: `${base}/${version}/server/server.jar`,
         url: versionInfo.downloads.server.url,
         hash: versionInfo.downloads.server.sha1,
@@ -383,7 +637,7 @@ class Minecraft {
         extract: false,
         exclude: false,
         type: "server"
-      })
+      }
 
 
       // Process library files.
@@ -392,20 +646,23 @@ class Minecraft {
         // If there is artifact(library file), check whether to download or not
         // based on the os rules and process accordingly.
         if ("artifact" in lib.downloads) {
+          let artifactPath;
           if ("rules" in lib) {
             if (this.parseRule(lib.rules, platform)) {
-              fileList.push({
-                path: `${base}/${version}/libraries/${lib.downloads.artifact.path}`,
+              artifactPath = `${base}/${version}/libraries/${lib.downloads.artifact.path}`;
+              fileList[artifactPath] = {
+                path: artifactPath,
                 url: lib.downloads.artifact.url,
                 hash: lib.downloads.artifact.sha1,
                 download: true,
                 extract: false,
                 exclude: false,
                 type: "lib"
-              })
+              }
             }
           } else {
-            fileList.push({
+            artifactPath = `${base}/${version}/libraries/${lib.downloads.artifact.path}`;
+            fileList[artifactPath] = {
               path: `${base}/${version}/libraries/${lib.downloads.artifact.path}`,
               url: lib.downloads.artifact.url,
               hash: lib.downloads.artifact.sha1,
@@ -413,7 +670,7 @@ class Minecraft {
               extract: false,
               exclude: false,
               type: "lib"
-            })
+            }
           }
         }
 
@@ -430,33 +687,38 @@ class Minecraft {
 
         if ("classifiers" in lib.downloads) {
           if (platform in lib.natives) {
+            let nativePath;
             if ("rules" in lib) {
               if (this.parseRule(lib.rules, platform)) {
                 native = lib.natives[platform].replace("${arch}", arch)
                 if (native in lib.downloads.classifiers) {
-                  fileList.push({
-                    path: `${base}/${version}/natives/archive/${path.parse(lib.downloads.classifiers[native].path).base}`,
+                  nativePath = `${base}/${version}/natives/archive/${path.parse(lib.downloads.classifiers[native].path).base}`;
+                  fileList[nativePath] = {
+                    path: nativePath,
                     url: lib.downloads.classifiers[native].url,
                     hash: lib.downloads.classifiers[native].sha1,
                     download: true,
                     extract: ("extract" in lib) ? true : false,
+                    extractPath: `${base}/${version}/natives/`,
                     exclude: ("extract" in lib) ? lib.extract.exclude[0] : false,
                     type: "native"
-                  })
+                  }
                 }
               }
             } else {
               native = lib.natives[platform].replace("${arch}", arch);
               if (native in lib.downloads.classifiers) {
-                fileList.push({
-                  path: `${base}/${version}/natives/archive/${path.parse(lib.downloads.classifiers[native].path).base}`,
+                nativePath = `${base}/${version}/natives/archive/${path.parse(lib.downloads.classifiers[native].path).base}`;
+                fileList[nativePath] = {
+                  path: nativePath,
                   url: lib.downloads.classifiers[native].url,
                   hash: lib.downloads.classifiers[native].sha1,
                   download: true,
                   extract: ("extract" in lib) ? true : false,
+                  extractPath: `${base}/${version}/natives/`,
                   exclude: ("extract" in lib) ? lib.extract.exclude[0] : false,
                   type: "native"
-                })
+                }
               }
             }
           }
@@ -466,8 +728,9 @@ class Minecraft {
       // Handling of asset files.
       for (var k in assetInfo.objects) {
         let hash = assetInfo.objects[k].hash;
-        fileList.push({
-          path: `${base}/assets/${versionInfo.assets}/objects/${hash.substr(0, 2)}/${hash}`,
+        let assetPath = `${base}/assets/${versionInfo.assets}/objects/${hash.substr(0, 2)}/${hash}`;
+        fileList[assetPath] = {
+          path: assetPath,
           copyTo: `${base}/assets/${versionInfo.assets}/virtual/legacy/${hash.substr(0, 2)}/${hash}`,
           url: `http://resources.download.minecraft.net/${hash.substr(0, 2)}/${hash}`,
           hash: hash,
@@ -475,15 +738,8 @@ class Minecraft {
           extract: false,
           exclude: false,
           type: "asset"
-        })
+        }
       }
-      // assetInfo.objects.forEach((file)=>{
-      //   console.log(file);
-      //   // fileList.push({
-      //   //   path: `${base}/${versionInfo.assets}/${file.}`,
-      //   //   url: file.
-      //   // })
-      // })
 
       // Pass the file list of official game files.
       resolve(fileList);
