@@ -5,7 +5,6 @@ const os = require('os');
 const _ = require('lodash');
 const crypto = require('crypto');
 const yauzl = require('yauzl');
-const PassThrough = require('stream').PassThrough;
 var logger = require('log4js').getLogger();
 
 const base = "data"
@@ -194,7 +193,7 @@ class Minecraft {
    * Initializes `DownloadsHandler` for fast downloading.
    */
   constructor() {
-    this.downloader = new DownloadsHandler();
+    this.downloader = new DownloadsHandler(8);
   }
 
   /**
@@ -411,10 +410,17 @@ class Minecraft {
                 // Hash check here...
                 Minecraft.sha1Sum(file).then((sum)=>{
                   if (sum == fileList[file].hash) {
-
                     res();
                   } else {
-                    rej(new Error(`The resulting hash of file '${file}' is wrong.`))
+                    fs.unlink(file, (err)=>{
+                      if (err) { rej(err) } else {
+                        downList.push({
+                          url: fileList[file].url,
+                          // Might change `path` function to something else later.
+                          path: fileList[file].path
+                        })
+                      }
+                    })
                   }
                 }).catch((err)=>{
                   if (err) { rej(err) };
@@ -422,7 +428,6 @@ class Minecraft {
               }
             })
           })
-
         }
 
         if (fileList[file].download && fileList[file].extract) {
@@ -443,6 +448,8 @@ class Minecraft {
                   if (!_.find(downList, { path: cursor.path })) {
                     extracting.push(Minecraft.extractJar(cursor))
                   }
+                } else {
+
                 }
               })
             })
@@ -462,7 +469,6 @@ class Minecraft {
 
       // Wait for files to get extracted.
       await Promise.all(extracting).then((extracted)=>{
-        console.log(extracted);
         fs.writeFile(gameFile, JSON.stringify(fileList), (err)=>{
           console.log("Saved fileData.json");
           if (err) {
@@ -775,15 +781,15 @@ class Minecraft {
 var minecraft = new Minecraft();
 
 minecraft.checkFiles("1.12.2");
-// minecraft.checkFiles("1.8.8")
-// minecraft.checkFiles("1.8")
-// minecraft.checkFiles("1.4.7")
-// minecraft.checkFiles("1.7.2")
-// minecraft.checkFiles("1.4.5")
-// minecraft.checkFiles("1.11")
-// minecraft.checkFiles("1.7")
-// minecraft.checkFiles("1.9")
-// minecraft.checkFiles("1.16.1")
+minecraft.checkFiles("1.8.8")
+minecraft.checkFiles("1.8")
+minecraft.checkFiles("1.4.7")
+minecraft.checkFiles("1.7.2")
+minecraft.checkFiles("1.4.5")
+minecraft.checkFiles("1.11")
+minecraft.checkFiles("1.7")
+minecraft.checkFiles("1.9")
+minecraft.checkFiles("1.16.1")
 
 
 

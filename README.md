@@ -2,6 +2,8 @@
 
 A Minecraft Launcher made with electron/node.js.
 
+## Note that *everything* is subject to change.
+
 ## Progress
 
 This project is in WIP status. Here is the current roadmap for the project:
