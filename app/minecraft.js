@@ -9,7 +9,7 @@ var logger = require('log4js').getLogger();
 
 const base = "data"
 
-
+console.time("1.12.2");
 
 /**
  * This class is made to handle multiple downloads at once. It is made to get
@@ -99,7 +99,7 @@ class DownloadsHandler {
         // the amount of our downloading threads, do not create unnecessary
         // downloading threads.
         logger.debug(`Started downloading '${jobID}' with ${this.threads} threads.`)
-        var fileAmount = (files.length < 8) ? files.length : 8;
+        var fileAmount = (files.length < this.threads) ? files.length : this.threads;
         for (var i = 0; i < fileAmount; i++) {
           this.downloadFile(jobID, cb);
         }
@@ -189,11 +189,36 @@ class DownloadsHandler {
 class Minecraft {
 
   downloader;
+  versionInfo;
+  assetInfo;
+  fileList;
+  game = {};
+  user = {};
   /**
    * Initializes `DownloadsHandler` for fast downloading.
    */
-  constructor() {
+  constructor(type) {
     this.downloader = new DownloadsHandler(8);
+    this.type = type;
+  }
+
+  async initialize(version) {
+
+    this.game.version = version;
+
+    return new Promise(async(resolve, reject)=>{
+      this.versionInfo = await Minecraft.getManifest().then((manifest)=>{
+        return Minecraft.getVersionInfo(version, manifest);
+      }).catch((err)=>{
+        reject(err);
+      })
+
+      this.assetInfo = await Minecraft.getAssetsInfo(version, this.versionInfo).catch((err)=>{
+        reject(err);
+      });
+
+      resolve();
+    })
   }
 
   /**
@@ -289,9 +314,10 @@ class Minecraft {
    * @param  {Object} versionInfo Version JSON data that comes from `getVersionInfo` function.
    * @return {Promise}             A promise object.
    */
-  static getAssetsInfo(versionInfo) {
+  static getAssetsInfo(version, versionInfo) {
 
-    const assetFile = `${base}/assets/${versionInfo.assets}.json`;
+    // [16:45:27] [Client thread/ERROR]: Can't find the resource index file: C:\Users\duoqu\Documents\mclaunch\app\data\assets\1.12.2\indexes\1.12.json
+    const assetFile = `${base}/assets/${version}/indexes/${versionInfo.assets}.json`;
 
     return new Promise((resolve, reject)=>{
 
@@ -333,33 +359,21 @@ class Minecraft {
    * @param  {Function} cb    Callback function that will run on every check.
    * @return {Promise}        Returns a promise object.
    */
-  checkFiles(version, cb) {
+  checkFiles(cb) {
 
-    const gameFile = `${base}/versions/${version}/fileData.json`;
-    var fileList;
+    const gameFile = `${base}/versions/${this.game.version}/fileData.json`;
     var extracting = [];
     var checkAgain = false;
 
     return new Promise(async (resolve, reject)=>{
-
-      // Get version info.
-      const versionInfo = await Minecraft.getManifest().then((manifest)=>{
-        return Minecraft.getVersionInfo(version, manifest);
-      }).catch((err)=>{
-        reject(err);
-      })
-
-      const assetInfo = await Minecraft.getAssetsInfo(versionInfo).catch((err)=>{
-        reject(err);
-      });
 
       await new Promise((res, rej)=>{
         fs.stat(gameFile, async (err)=>{
           if (err) {
             if (err.code == "ENOENT") {
               // Subject to change as I may implement forge or things like that.
-              fileList = await this.getOfficialList(versionInfo, assetInfo, version);
-              fs.writeFile(gameFile, JSON.stringify(fileList), (err)=>{
+              this.fileList = await this.getOfficialList(this.versionInfo, this.assetInfo, this.game.version);
+              fs.writeFile(gameFile, JSON.stringify(this.fileList), (err)=>{
                 if (err) { rej(err) } else {
                   res();
                 }
@@ -369,7 +383,7 @@ class Minecraft {
           } else {
             fs.readFile(gameFile, (err, data)=>{
               if (err) { rej(err) } else {
-                fileList = JSON.parse(data);
+                this.fileList = JSON.parse(data);
                 res();
               }
             })
@@ -381,22 +395,21 @@ class Minecraft {
 
 
       var downList = [];
+      var hashChecks = [];
 
 
-      for (var file in fileList) {
-        if (fileList[file].download) {
+      for (var file in this.fileList) {
+        if (this.fileList[file].download) {
           await new Promise((res, rej)=>{
             fs.stat(file, async (err)=>{
               if (err) {
                 if (err.code == "ENOENT") {
-
                   downList.push({
-                    url: fileList[file].url,
-                    // Might change `path` function to something else later.
-                    path: fileList[file].path
+                    url: this.fileList[file].url,
+                    path: this.fileList[file].path
                   })
 
-                  fs.mkdir(path.parse(fileList[file].path).dir,
+                  fs.mkdir(path.parse(this.fileList[file].path).dir,
                     { recursive: true },
                     (err)=>{
                       if (err) {
@@ -408,40 +421,42 @@ class Minecraft {
                 }
               } else {
                 // Hash check here...
-                Minecraft.sha1Sum(file).then((sum)=>{
-                  if (sum == fileList[file].hash) {
+                // Will check if it works later...
+                hashChecks.push(Minecraft.sha1Sum(file).then((sum)=>{
+                  if (sum == this.fileList[file].hash) {
                     res();
                   } else {
                     fs.unlink(file, (err)=>{
+                      console.log(`Removed corrupted file '${file}'`);
                       if (err) { rej(err) } else {
                         downList.push({
-                          url: fileList[file].url,
-                          // Might change `path` function to something else later.
-                          path: fileList[file].path
+                          url: this.fileList[file].url,
+                          path: this.fileList[file].path
                         })
+                        res();
                       }
                     })
                   }
                 }).catch((err)=>{
                   if (err) { rej(err) };
-                });
+                }));
               }
             })
           })
         }
 
-        if (fileList[file].download && fileList[file].extract) {
-          if (!fileList[file].extracted) {
+        if (this.fileList[file].download && this.fileList[file].extract) {
+          if (!this.fileList[file].extracted) {
             checkAgain = true;
             // If the file is going to be downloaded, do not try to extract.
             if (!_.find(downList, { path: file })) {
-              extracting.push(Minecraft.extractJar(fileList[file]))
+              extracting.push(Minecraft.extractJar(this.fileList[file]))
             }
 
           } else {
             //console.log(fileList[file]);
-            var cursor = fileList[file];
-            fileList[file].extracted.forEach((f)=>{
+            var cursor = this.fileList[file];
+            this.fileList[file].extracted.forEach((f)=>{
               fs.stat(f.file, (err)=>{
                 if (err) {
                   checkAgain = true;
@@ -449,11 +464,26 @@ class Minecraft {
                     extracting.push(Minecraft.extractJar(cursor))
                   }
                 } else {
-
+                  hashChecks.push(new Promise((res, rej)=>{
+                  //  console.log(f.file);
+                    Minecraft.sha1Sum(f.file).then((sum)=>{
+                      //console.log(f.file);
+                      //console.log("________________________________");
+                      if (sum == f.hash) {
+                        res();
+                      } else {
+                        fs.unlink(f.file, (err)=>{
+                          if (err) { rej(err) } else {
+                            checkAgain = true;
+                            res();
+                          }
+                        })
+                      }
+                    })
+                  }))
                 }
               })
             })
-            // check sha1 of `file.extracted[*]`
           }
         }
       }
@@ -467,9 +497,15 @@ class Minecraft {
       }
 
 
+      await Promise.all(hashChecks).then((asd)=>{
+
+      }).catch((err)=>{
+        console.log(err);
+      })
+
       // Wait for files to get extracted.
       await Promise.all(extracting).then((extracted)=>{
-        fs.writeFile(gameFile, JSON.stringify(fileList), (err)=>{
+        fs.writeFile(gameFile, JSON.stringify(this.fileList), (err)=>{
           console.log("Saved fileData.json");
           if (err) {
             reject(err);
@@ -482,12 +518,13 @@ class Minecraft {
 
       // If there is stuff to download, download and wait for them to finish.
       if (downList.length) {
-        await this.downloader.put(version, downList, (a, b)=>{
+        await this.downloader.put(this.version, downList, (a, b)=>{
           // This callback will go to the client to visualize the progress.
           console.log(`[${a}/${b}]`);
         });
       }
 
+      resolve("TEST")
       // // Will look into that later
       // if (checkAgain) {
       //   this.checkFiles(version, cb)
@@ -496,34 +533,121 @@ class Minecraft {
     })
   }
 
+  genCMD(user = "demo") {
+    //this.game.cmd
+
+    //  net.minecraft.client.main.Main
+    // --username Duoquote
+    // --version 1.12.2
+    // --gameDir C:\Users\duoqu\AppData\Roaming\.minecraft
+    // --assetsDir C:\Users\duoqu\AppData\Roaming\.minecraft\assets
+    // --assetIndex 1.12
+    // --uuid a222ad0383614ce58a784b844a59a8f8
+    // --accessToken -
+    // --userType mojang
+    // --versionType release
+
+    var baseArgs;
+
+    // For testing purposes only, I added this manually, will fetch
+    // automatically in the future.
+    var javawEXE = '"C:\\Program Files (x86)\\Minecraft Launcher\\runtime\\jre-x64\\bin\\javaw.exe"'
+
+
+    // \${(\w+)}
+
+
+    if ("minecraftArguments" in this.versionInfo) {
+      baseArgs = this.versionInfo.minecraftArguments;
+    } else {
+      baseArgs = this.versionInfo.arguments.game.filter(
+        obj => typeof(obj) == "string"
+      ).join(" ");
+    }
+
+    [...baseArgs.matchAll(/\$\{(\w+)\}/g)].forEach((arg)=>{
+      switch (arg[1]) {
+        case "version_type":
+          baseArgs = baseArgs.replace(arg[0], this.versionInfo.type)
+          break;
+        case "version_name":
+          baseArgs = baseArgs.replace(arg[0], this.game.version)
+          break;
+        case "auth_player_name":
+          baseArgs = baseArgs.replace(arg[0], user)
+          break;
+        case "assets_index_name":
+          baseArgs = baseArgs.replace(arg[0], this.versionInfo.assets)
+          break;
+        case "game_directory":
+          baseArgs = baseArgs.replace(arg[0], path.resolve(`${base}`))
+          break;
+        case "user_type":
+          baseArgs = baseArgs.replace(arg[0], ("uuid" in this.user) ? "mojang" : "offline")
+          break;
+        case "assets_root":
+          baseArgs = baseArgs.replace(arg[0], path.resolve(`${base}/assets/${this.game.version}`))
+          break;
+        case "auth_access_token":
+          baseArgs = baseArgs.replace(arg[0], "offline")
+          break;
+        case "auth_uuid":
+          baseArgs = baseArgs.replace(arg[0], "offline");
+          break;
+      }
+    })
+
+
+    var javaArgs = [];
+    javaArgs.push(`-Djava.library.path="${path.resolve(base, this.game.version, "natives")}"`);
+    javaArgs.push(`-Dminecraft.client.jar="${path.resolve(base, this.game.version, "client.jar")}"`);
+    //javaArgs += `-cp ${_.find()}`
+
+    javaArgs.push("-cp");
+    javaArgs.push(_.filter(this.fileList, _.conforms(
+        { type: _.partial(_.includes, ["lib", "client"]) }
+      ))
+      .map( a => path.resolve(a.path))
+      .join(path.delimiter))
+    //console.log(lib);
+    javaArgs.push("-Xmx2G -XX:+UnlockExperimentalVMOptions -XX:+UseG1GC -XX:G1NewSizePercent=20 -XX:G1ReservePercent=20 -XX:MaxGCPauseMillis=50 -XX:G1HeapRegionSize=32M");
+
+
+    //console.log(baseArgs);
+
+    // For now, remove uuid and accessToken args as I didn't implement login
+    // system.
+    //baseArgs = baseArgs.replace(/--(uuid|accessToken) \$\{.*?\} ?/g, "");
+
+    fs.writeFileSync("test.bat", _.flatten([javawEXE, javaArgs, this.versionInfo.mainClass, baseArgs]).join(" "))
+
+    //console.log(baseArgs);
+
+  }
 
   /**
    * Extracts a JAR file, not specifically a jar file, it will extract any zip
    * file.
    * @param  {Object} file A file object, should contain `path` key that
    * contains the path to zip file, `extractPath` key that contains the path to
-   * folder to extract, `exclude` key to exclude a specific file (might change
-   * it to an array later) and `extracted` key to store extracted files info.
+   * folder to extract, `exclude` key to exclude a files given with array and
+   * `extracted` key to store extracted files info.
    * @return {Promise}      Returns a promise object.
    */
   static extractJar(file) {
-    //console.log(file);
 
     var extractedList = [];
 
     return new Promise((resolve, reject)=>{
-      console.log("YAUZL:");
-      console.log(file);
       yauzl.open(file.path, { lazyEntries: true }, (err, zip)=>{
         if (err) { reject(err) } else {
           zip.readEntry();
           zip.on("end", async ()=>{
             file.extracted = extractedList;
-            console.log(extractedList);
             resolve(file);
           })
           zip.on("entry", (entry)=>{
-            if (entry.fileName.startsWith(file.exclude)) {
+            if (file.exclude.filter( ex => entry.fileName.startsWith(ex)).length){
               zip.readEntry();
             } else {
               zip.openReadStream(entry, (err, stream)=>{
@@ -600,7 +724,7 @@ class Minecraft {
     // [x] Handle client.jar, server.jar.
     // [x] Handle library files.
     // [x] Handle native files.
-    // [-] Handle version assets. Put them in a public directory, accessible
+    // [x] Handle version assets. Put them in a public directory, accessible
     // across different game versions.
     // [-] Fix rule parsing as it's temporary.
     return new Promise((resolve, reject)=>{
@@ -623,8 +747,8 @@ class Minecraft {
       }
 
       // Add client.jar rightaway, mark as download.
-      fileList[`${base}/${version}/client.jar`] = {
-        path: `${base}/${version}/client.jar`,
+      fileList[`${base}/${this.game.version}/client.jar`] = {
+        path: `${base}/${this.game.version}/client.jar`,
         url: versionInfo.downloads.client.url,
         hash: versionInfo.downloads.client.sha1,
         download: true,
@@ -635,8 +759,8 @@ class Minecraft {
 
 
       // Add server.jar rightaway, mark as not to download.
-      fileList[`${base}/${version}/server/server.jar`] = {
-        path: `${base}/${version}/server/server.jar`,
+      fileList[`${base}/${this.game.version}/server/server.jar`] = {
+        path: `${base}/${this.game.version}/server/server.jar`,
         url: versionInfo.downloads.server.url,
         hash: versionInfo.downloads.server.sha1,
         download: false,
@@ -655,7 +779,7 @@ class Minecraft {
           let artifactPath;
           if ("rules" in lib) {
             if (this.parseRule(lib.rules, platform)) {
-              artifactPath = `${base}/${version}/libraries/${lib.downloads.artifact.path}`;
+              artifactPath = `${base}/${this.game.version}/libraries/${lib.downloads.artifact.path}`;
               fileList[artifactPath] = {
                 path: artifactPath,
                 url: lib.downloads.artifact.url,
@@ -667,9 +791,9 @@ class Minecraft {
               }
             }
           } else {
-            artifactPath = `${base}/${version}/libraries/${lib.downloads.artifact.path}`;
+            artifactPath = `${base}/${this.game.version}/libraries/${lib.downloads.artifact.path}`;
             fileList[artifactPath] = {
-              path: `${base}/${version}/libraries/${lib.downloads.artifact.path}`,
+              path: `${base}/${this.game.version}/libraries/${lib.downloads.artifact.path}`,
               url: lib.downloads.artifact.url,
               hash: lib.downloads.artifact.sha1,
               download: true,
@@ -698,15 +822,15 @@ class Minecraft {
               if (this.parseRule(lib.rules, platform)) {
                 native = lib.natives[platform].replace("${arch}", arch)
                 if (native in lib.downloads.classifiers) {
-                  nativePath = `${base}/${version}/natives/archive/${path.parse(lib.downloads.classifiers[native].path).base}`;
+                  nativePath = `${base}/${this.game.version}/natives/archive/${path.parse(lib.downloads.classifiers[native].path).base}`;
                   fileList[nativePath] = {
                     path: nativePath,
                     url: lib.downloads.classifiers[native].url,
                     hash: lib.downloads.classifiers[native].sha1,
                     download: true,
                     extract: ("extract" in lib) ? true : false,
-                    extractPath: `${base}/${version}/natives/`,
-                    exclude: ("extract" in lib) ? lib.extract.exclude[0] : false,
+                    extractPath: `${base}/${this.game.version}/natives/`,
+                    exclude: ("extract" in lib) ? lib.extract.exclude : false,
                     type: "native"
                   }
                 }
@@ -714,15 +838,15 @@ class Minecraft {
             } else {
               native = lib.natives[platform].replace("${arch}", arch);
               if (native in lib.downloads.classifiers) {
-                nativePath = `${base}/${version}/natives/archive/${path.parse(lib.downloads.classifiers[native].path).base}`;
+                nativePath = `${base}/${this.game.version}/natives/archive/${path.parse(lib.downloads.classifiers[native].path).base}`;
                 fileList[nativePath] = {
                   path: nativePath,
                   url: lib.downloads.classifiers[native].url,
                   hash: lib.downloads.classifiers[native].sha1,
                   download: true,
                   extract: ("extract" in lib) ? true : false,
-                  extractPath: `${base}/${version}/natives/`,
-                  exclude: ("extract" in lib) ? lib.extract.exclude[0] : false,
+                  extractPath: `${base}/${this.game.version}/natives/`,
+                  exclude: ("extract" in lib) ? lib.extract.exclude : false,
                   type: "native"
                 }
               }
@@ -778,18 +902,39 @@ class Minecraft {
   }
 }
 
-var minecraft = new Minecraft();
+var minecraft = new Minecraft("official");
+minecraft.initialize("1.12.2").then(()=>{
+  minecraft.checkFiles().then(()=>{
+    minecraft.genCMD();
+  })
+})
 
-minecraft.checkFiles("1.12.2");
-minecraft.checkFiles("1.8.8")
-minecraft.checkFiles("1.8")
-minecraft.checkFiles("1.4.7")
-minecraft.checkFiles("1.7.2")
-minecraft.checkFiles("1.4.5")
-minecraft.checkFiles("1.11")
-minecraft.checkFiles("1.7")
-minecraft.checkFiles("1.9")
-minecraft.checkFiles("1.16.1")
+// var minecraft = new Minecraft("official");
+// minecraft.initialize("1.16.1").then(()=>{
+//   minecraft.checkFiles().then(()=>{
+//     minecraft.genCMD();
+//   })
+// })
+
+// console.log(minecraft.genArgs("official", "1.12.2"));
+
+// minecraft.checkFiles("1.12.2").then(()=>{
+//   minecraft.checkFiles("1.12.2").then(()=>{
+//     console.timeEnd("1.12.2");
+//   })
+// })
+
+
+
+// minecraft.checkFiles("1.8.8")
+// minecraft.checkFiles("1.8")
+// minecraft.checkFiles("1.4.7")
+// minecraft.checkFiles("1.7.2")
+// minecraft.checkFiles("1.4.5")
+// minecraft.checkFiles("1.11")
+// minecraft.checkFiles("1.7")
+// minecraft.checkFiles("1.9")
+// minecraft.checkFiles("1.16.1")
 
 
 
@@ -811,7 +956,7 @@ minecraft.checkFiles("1.16.1")
 // ]).then((result)=>{
 //   console.log(result);
 // })
-//
+
 // module.exports = {
 //   getManifest: getManifest,
 //   getVersionInfo: getVersionInfo,
