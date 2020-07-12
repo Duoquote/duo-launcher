@@ -1,1 +1,200 @@
-@import "~spectre.css/src/spectre.scss";
+// Material icons font
+@font-face {
+  font-family: 'Material Icons';
+  font-style: normal;
+  font-weight: 400;
+  src: url("~material-design-icons/iconfont/MaterialIcons-Regular.eot"); /* For IE6-8 */
+  src: local('Material Icons'),
+    local('MaterialIcons-Regular'),
+    url("~material-design-icons/iconfont/MaterialIcons-Regular.woff2") format('woff2'),
+    url("~material-design-icons/iconfont/MaterialIcons-Regular.woff") format('woff'),
+    url("~material-design-icons/iconfont/MaterialIcons-Regular.ttf") format('truetype');
+}
+
+@import "../fonts/gilroy.css";
+
+.material-icons,
+.mi {
+  font-family: 'Material Icons';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;  /* Preferred icon size */
+  display: inline-block;
+  text-rendering: auto;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transform: translate(0, 0);
+}
+
+// Apply color patches
+$primary-color: #b5d149;
+$secondary-color: #86a2f9;
+$dark-color: #1d1d1d;
+$font-size-xlg: 1.4rem;
+
+// Import spectre.css variables
+@import "~spectre.css/src/_variables.scss";
+
+$line-height-xlg: $line-height + 0.1rem;
+
+// Import mixins
+@import "~spectre.css/src/_mixins.scss";
+
+// Spectre fixes
+@mixin label-base() {
+  border-radius: $border-radius;
+  line-height: 1.5;
+  padding: .1rem .2rem;
+}
+
+// Apply a few minor patches
+$border-radius: $unit-1;
+$layout-spacing: $unit-3;
+
+// Import spectre
+// Reset and dependencies
+@import "~spectre.css/src/_normalize.scss";
+@import "~spectre.css/src/_base.scss";
+
+// Elements
+@import "~spectre.css/src/_typography.scss";
+// @import "~spectre.css/src/_asian.scss";
+@import "~spectre.css/src/_tables.scss";
+@import "~spectre.css/src/_buttons.scss";
+@import "~spectre.css/src/_forms.scss";
+@import "~spectre.css/src/_labels.scss";
+// @import "~spectre.css/src/_codes.scss";
+@import "~spectre.css/src/_media.scss";
+
+// Layout
+@import "~spectre.css/src/_layout.scss";
+// @import "~spectre.css/src/_hero.scss";
+@import "~spectre.css/src/_navbar.scss";
+
+// Components
+// @import "~spectre.css/src/_accordions.scss";
+@import "~spectre.css/src/_avatars.scss";
+@import "~spectre.css/src/_badges.scss";
+// @import "~spectre.css/src/_breadcrumbs.scss";
+@import "~spectre.css/src/_bars.scss";
+@import "~spectre.css/src/_cards.scss";
+@import "~spectre.css/src/_chips.scss";
+@import "~spectre.css/src/_dropdowns.scss";
+// @import "~spectre.css/src/_empty.scss";
+@import "~spectre.css/src/_menus.scss";
+@import "~spectre.css/src/_modals.scss";
+// @import "~spectre.css/src/_navs.scss";
+@import "~spectre.css/src/_pagination.scss";
+@import "~spectre.css/src/_panels.scss";
+@import "~spectre.css/src/_popovers.scss";
+// @import "~spectre.css/src/_steps.scss";
+@import "~spectre.css/src/_tabs.scss";
+@import "~spectre.css/src/_tiles.scss";
+@import "~spectre.css/src/_toasts.scss";
+@import "~spectre.css/src/_tooltips.scss";
+
+// Utility classes
+@import "~spectre.css/src/_animations.scss";
+@import "~spectre.css/src/_utilities.scss";
+
+// .btn.btn-clear fix
+.btn.btn-clear{
+  font-family: 'Material Icons';
+  font-weight: normal;
+  font-style: normal;
+  font-size: $unit-4;  /* Preferred icon size */
+  display: inline-block;
+  text-rendering: auto;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transform: translate(0, 0);
+
+  &:before {
+    content: "close";
+  }
+}
+
+// My mixins
+@mixin light-blur-bg {
+  backdrop-filter: blur(20px);
+}
+
+@mixin highlight-text {
+  font-family: "Gilroy";
+  color: $light-color;
+  font-size: $font-size-xlg;
+  line-height: $line-height-xlg;
+  font-weight: bold;
+  letter-spacing: calc( #{$unit-o} / 2);
+}
+
+@mixin light-text {
+  font-family: "Gilroy";
+  font-weight: normal;
+}
+
+
+// My css rules and overrides
+html {
+
+  height: 100%;
+
+  body {
+    height: 100%;
+    display: flex;
+    flex-flow: column;
+  }
+}
+
+a,
+.btn {
+  &:focus {
+    box-shadow: unset;
+  }
+}
+
+.bg-img {
+  height: 120%;
+  width: 120%;
+
+  top: calc(100% - 110%);
+  left: calc(100% - 110%);
+
+  z-index: -1;
+  background-image: url("../img/bg-img.png");
+  background-size: contain;
+}
+
+.main-bar {
+  @include light-blur-bg;
+  background-color: rgba($dark-color, 0.5);
+}
+
+.content-section {
+  flex: 1 1 auto;
+  height: 100%;
+  width: 100%;
+
+  .container {
+    @include light-blur-bg;
+    height: 100%;
+  }
+}
+
+.main-bar {
+  .btn {
+    @include highlight-text;
+
+  }
+
+  &.p-2 {
+    .btn:after {
+      background-color: #fff;
+      content: "";
+      height: 3px;
+      top: calc(#{$line-height-xlg} / 2 - #{$unit-o} - 3px);
+      position: relative;
+      display: block;
+    }
+  }
+}

@@ -6,7 +6,7 @@
   "main": "app.js",
   "scripts": {
     "start": "electron .",
-    "test": "cross-env NODE_ENV=development npm start",
+    "test": "cross-env NODE_ENV=development npm run webpack && npm start",
     "test-mc": "cross-env NODE_ENV=development node app/mc-test.js",
     "webpack": "cross-env NODE_ENV=development npx webpack && npm run pug",
     "pug": "node pug.render.js"
@@ -24,8 +24,10 @@
     "css-loader": "^3.6.0",
     "electron": "^9.0.5",
     "electron-reload": "^1.5.0",
+    "file-loader": "^6.0.0",
     "glob": "^7.1.6",
     "lodash": "^4.17.15",
+    "material-design-icons": "^3.0.1",
     "pug": "^3.0.0",
     "sass": "^1.26.9",
     "sass-loader": "^8.0.2",

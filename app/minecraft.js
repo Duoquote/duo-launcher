@@ -29,7 +29,7 @@ class DownloadsHandler {
 
   /**
    * Get a `job` from list of files that are going to get downloaded.
-   * @param  {string} jobID  A user specified job ID, can be anything.
+   * @param  {jobID} jobID - A user specified job ID, can be anything.
    * @return {Object}        A `job`(file to download) from files to download.
    */
   getJob(jobID) {
@@ -858,10 +858,10 @@ class Minecraft {
       // Handling of asset files.
       for (var k in assetInfo.objects) {
         let hash = assetInfo.objects[k].hash;
-        let assetPath = `${base}/assets/${versionInfo.assets}/objects/${hash.substr(0, 2)}/${hash}`;
+        let assetPath = `${base}/assets/${this.game.version}/objects/${hash.substr(0, 2)}/${hash}`;
         fileList[assetPath] = {
           path: assetPath,
-          copyTo: `${base}/assets/${versionInfo.assets}/virtual/legacy/${hash.substr(0, 2)}/${hash}`,
+          copyTo: `${base}/assets/${this.game.version}/virtual/legacy/${hash.substr(0, 2)}/${hash}`,
           url: `http://resources.download.minecraft.net/${hash.substr(0, 2)}/${hash}`,
           hash: hash,
           download: true,
@@ -902,39 +902,12 @@ class Minecraft {
   }
 }
 
-var minecraft = new Minecraft("official");
-minecraft.initialize("1.12.2").then(()=>{
-  minecraft.checkFiles().then(()=>{
-    minecraft.genCMD();
-  })
-})
-
 // var minecraft = new Minecraft("official");
-// minecraft.initialize("1.16.1").then(()=>{
+// minecraft.initialize("1.12.2").then(()=>{
 //   minecraft.checkFiles().then(()=>{
 //     minecraft.genCMD();
 //   })
 // })
-
-// console.log(minecraft.genArgs("official", "1.12.2"));
-
-// minecraft.checkFiles("1.12.2").then(()=>{
-//   minecraft.checkFiles("1.12.2").then(()=>{
-//     console.timeEnd("1.12.2");
-//   })
-// })
-
-
-
-// minecraft.checkFiles("1.8.8")
-// minecraft.checkFiles("1.8")
-// minecraft.checkFiles("1.4.7")
-// minecraft.checkFiles("1.7.2")
-// minecraft.checkFiles("1.4.5")
-// minecraft.checkFiles("1.11")
-// minecraft.checkFiles("1.7")
-// minecraft.checkFiles("1.9")
-// minecraft.checkFiles("1.16.1")
 
 
 
@@ -957,8 +930,5 @@ minecraft.initialize("1.12.2").then(()=>{
 //   console.log(result);
 // })
 
-// module.exports = {
-//   getManifest: getManifest,
-//   getVersionInfo: getVersionInfo,
-//   DownloadsHandler: DownloadsHandler
-// }
+
+module.exports = Minecraft;

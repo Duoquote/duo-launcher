@@ -1,8 +1,10 @@
-const { app, BrowserWindow } = require('electron');
-const mc = require('./app/mcFunctions');
+const { app, BrowserWindow, ipcMain } = require('electron');
+const Minecraft = require('./app/minecraft.js');
 
-var downloader;
+const minecraft = new Minecraft("official");
 var manifest;
+
+
 
 function createWindow() {
   let win = new BrowserWindow({
@@ -10,17 +12,35 @@ function createWindow() {
     width: 1280,
     webPreferences: {
       nodeIntegration: true
-    }
+    },
+    show: false
+  })
+
+  win.setMenuBarVisibility(false)
+  win.loadFile("dist-web/index.html")
+
+  win.once("ready-to-show", ()=>{
+    win.show();
   })
 
   win.webContents.openDevTools();
-  win.loadFile("dist-web/index.html")
+
 }
 
+ipcMain.on("init-mc", (e, arg)=>{
+  minecraft.initialize(arg).then(()=>{
+    e.reply("init-mc", "complete");
+  })
+})
+
 function initAssets() {
-  downloader = new  mc.DownloadsHandler();
-  manifest = mc.getManifest();
-  console.log(manifest);
+
+  // var minecraft = new Minecraft("official");
+  // minecraft.initialize("1.12.2").then(()=>{
+  //   minecraft.checkFiles().then(()=>{
+  //     minecraft.genCMD();
+  //   })
+  // })
 
 }
 

@@ -2,7 +2,7 @@
 
 A Minecraft Launcher made with electron/node.js.
 
-## Note that *everything* is subject to change.
+## Note that __everything__ is subject to change.
 
 ## Progress
 

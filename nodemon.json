@@ -1,0 +1,6 @@
+{
+  "verbose": true,
+  "ext": "scss,js,pug",
+  "ignore": ["out/", "dist-web/", "dist/", "node_modules/"],
+  "exec": "npm test"
+}
