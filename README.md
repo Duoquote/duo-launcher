@@ -1,4 +1,6 @@
 # Minecraft Launcher -- Electron/Node.js
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2FDuoquote%2Fduo-launcher.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2FDuoquote%2Fduo-launcher?ref=badge_shield)
+
 
 A Minecraft Launcher made with electron/node.js.
 
@@ -25,3 +27,7 @@ This project is in WIP status. Here are the current goals for the project:
     - [ ] More...
 - [ ] Publish the code as soon as the game can run.
 - [ ] Implement testing with [codecov.io](https://codecov.io)
+
+
+## License
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2FDuoquote%2Fduo-launcher.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2FDuoquote%2Fduo-launcher?ref=badge_large)
